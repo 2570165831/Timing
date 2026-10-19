@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "timing-local"
+version = "0.12.0"
+description = "Local Chinese, Japanese and English lyric alignment and TTML export"
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "torch>=2.7,<3",
+  "torchaudio>=2.7,<3",
+  "transformers>=5.13.0,<6",
+  "fastapi>=0.115",
+  "uvicorn>=0.34",
+  "python-multipart>=0.0.20",
+  "soundfile>=0.13",
+  "librosa>=0.11",
+  "numpy>=2,<3",
+  "fugashi>=1.4",
+  "unidic-lite>=1.0.8",
+  "pyphen>=0.17",
+  "syllabify==0.5.1",
+  "huggingface-hub>=0.34",
+  "safetensors>=0.6",
+  "psutil>=7",
+  "httpx>=0.28",
+  "defusedxml>=0.7",
+  "melband-roformer-infer",
+  "lightning>=2.5,<3",
+  "h5py>=3.12",
+  "matplotlib>=3.10",
+  "cmudict>=1.0",
+  "pykakasi>=2.3",
+  "pypinyin==0.55.0",
+  "hanziconv==0.3.2",
+  "numba>=0.61",
+]
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.setuptools.packages.find]
+include = ["timing*"]
+
+[tool.setuptools.package-data]
+timing = ["prompts/*.txt", "resources/*.txt"]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+torchaudio = { index = "pytorch-cu128" }
+melband-roformer-infer = { git = "https://github.com/openmirlab/melband-roformer-infer.git", rev = "55e4217935da91aee0f2f7ac44cbad512a3485ac" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
