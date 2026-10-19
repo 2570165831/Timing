@@ -18,7 +18,8 @@ from timing.schema import Line
 
 
 LYRICS = '[00:01.00]hi\n[00:04.00]bye\n'
-ORIGINAL_TEXT_SHA256 = 'b23aabd16e22a1f74b8b6e12c5985d30be3428494f4b7c9b06a6fe75c61a8e82'
+# The original Japanese profile shares the revised English word-boundary rules.
+ORIGINAL_TEXT_SHA256 = '9d9d9c721ef049b95fd848e59e011cfc828c203c06e27ef6f3bdc8dcaca4bac7'
 
 
 @pytest.fixture
@@ -43,7 +44,7 @@ def api(tmp_path, monkeypatch):
         client.close()
 
 
-def test_prompt_profiles_are_bounded_and_original_is_exact():
+def test_prompt_profiles_are_bounded_and_original_snapshot_is_stable():
     assert llm_direct.PROMPT_PROFILES == ('fine', 'original')
     assert llm_direct.read_prompt() == llm_direct.read_prompt('fine')
     assert llm_direct.read_prompt('fine') != llm_direct.read_prompt('original')

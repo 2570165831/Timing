@@ -47,18 +47,22 @@ A run of digits keeps its written form and may stay one part with a multi-syllab
 reading (2024 → "er qian ling er shi si"). Choose lang="zh" for Mandarin-sung parts
 and lang="en" for English-sung parts, including alongside Japanese-sung parts.
 The output is for karaoke timing. Apply the following audio-aware segmentation
-policy to BOTH Japanese and English; do not require maximum splitting everywhere:
-- Reasonable compact grouping is allowed in normally sung portions when the
-  target voice forms a natural connected unit. Keep grouping local and modest;
-  do not collapse an entire line or unrelated words just to reduce part count.
+policy in addition to each language's rules; do not require maximum splitting everywhere:
+- Reasonable compact JAPANESE grouping is allowed in normally sung portions when
+  the target voice forms a natural connected unit. Keep Japanese grouping local
+  and modest; do not collapse an entire line or unrelated words to reduce part count.
+  English MUST preserve every written word boundary throughout every line,
+  including fast, fluent and connected singing. Grouping must never cross an
+  English word boundary; follow the English rules below for splitting within a word.
 - Listen for held or noticeably prolonged sung sounds, including sustained
   vowels, extended syllables and melisma. A word or local phrase containing
   such a sound MUST NOT remain one merged part if it has separable units.
   Split that affected word/phrase into independently assignable character/mora
   units for Japanese or sung syllables for English. Isolate the unit carrying
   the held sound from its preceding and following separable units, even when
-  the whole word/phrase is otherwise fluent and connected. Unaffected portions
-  may still be reasonably grouped. Judge prolongation from the AUDIO, not merely
+  the whole word/phrase is otherwise fluent and connected. Unaffected Japanese
+  portions may still be reasonably grouped; English syllables may stay together
+  ONLY within the same word. Judge prolongation from the AUDIO, not merely
   the spelling, a long-vowel mark or grammatical category. Mandarin is already
   split per character, so keep that granularity at held sounds too.
 - For EACH requested input line, isolate its LAST independently pronounceable
@@ -80,13 +84,26 @@ policy to BOTH Japanese and English; do not require maximum splitting everywhere
 
 English parts: lang="en"; reading is a nonempty ARRAY of lower-case ARPABET-like
 phone symbols from english_phone_inventory. You decide the pronunciation from
-audio and the syllable boundaries. Apply the grouping and protected-unit rules
-above, using sung linguistic syllables where splitting is required. Preserve
-natural spelling substrings, digraphs and silent letters. A held vowel across
-musical notes stays in its own syllable unit; it does not require invented extra
-syllables or repeated text. Contractions are not
-split mechanically at the apostrophe. A spelling syllable may cross a lexical
-convention if the actual pronunciation supports it. Do not invent silent-e sounds.
+audio and the syllable boundaries. Each English part MUST contain pronounced
+letters/numbers from only ONE written word. Keep different words in separate
+parts, even when they are linked, reduced or sung rapidly without a pause.
+Default to one part per whole word. Within a multi-syllable word, split further
+into sung syllables when the actual articulation calls for it, including the
+held-sound and line-ending rules above. Once a word is split, keep every fragment
+separate from all neighboring words. Never merge a whole word or word fragment
+with a fragment of another word. Spaces and silent punctuation may attach to
+an adjacent part, but must not pull letters from another word into that part.
+Examples when the words have the sung syllables shown:
+  Run to the table -> ["Run ","to ","the ","ta","ble"]
+  keep living -> ["keep ","liv","ing"]
+  Never use ["Run to the ta","ble"] or ["keep liv","ing"].
+These examples show text boundaries only; choose readings from the actual audio.
+Preserve natural spelling substrings, digraphs and silent letters. A held vowel
+across musical notes stays in its own syllable unit; it does not require invented
+extra syllables or repeated text. Contractions such as "we're" are one written
+word and are not split mechanically at the apostrophe. Intra-word spelling
+boundaries may differ from a dictionary division when supported by the sung
+pronunciation, but must NEVER cross a written word boundary. Do not invent silent-e sounds.
 Choose lang by actual sung pronunciation rather than the script or the language
 of the surrounding line. Japanese loanwords containing Latin letters can be
 Japanese; an English word embedded in a Japanese or Mandarin line can still be
@@ -104,8 +121,10 @@ words/phrases where assignable, and verify each held unit is not merged with
 separable neighbors. Verify the final independently pronounceable unit is isolated
 in EVERY line. Check each protected-unit exception is truly indivisible and as
 small as possible. For Mandarin parts verify that every Han character is its own
-part with dictionary-valid pinyin syllables. Keep only reasonable grouping
-elsewhere. Check exact text
+part with dictionary-valid pinyin syllables. Keep Japanese grouping modest.
+For English, inspect EVERY part and verify that it contains pronounced text from
+only one written word, with no cross-word grouping or fragments joined to
+neighboring words. Check exact text
 concatenation, complete sung readings and supported phone symbols as well.
 Do not fabricate a split or pronunciation when uncertain; keep only the smallest
 justified indivisible unit, or use the existing parts:[] fallback if the line's

@@ -77,7 +77,7 @@ Node 仅用于页面逻辑测试，应用运行不需要 Node。需要模型资�
 
 LLM 整曲模式忽略整首和 JSON 行级的手选语言；`llm_direct.json` 记录每行实际返回的语言、单次请求模式和音源。中日英分段分别验证本地支持的音素，具体语言不再被整首设置限制。整曲音频保留完整时间线，600 秒读取超时与 64 MiB 编码音频上限用于长输入；接口拒绝或截断不会自动引发更多 LLM 调用。
 
-`llm_direct.read_prompt` 管理两份独立提示词：`fine` 对应 `llm_direct.txt`（默认日语细拆），`original` 对应 `llm_direct_original.txt`（适度合并旧版）。整曲 API、网页提示词导出和 CLI 共用此选择；API 报告记录实际模板名称及哈希。模板选择只影响新请求，导入 JSON 的语言、读音和分段仍以实际内容为准。
+`llm_direct.read_prompt` 管理两份独立提示词：`fine` 对应 `llm_direct.txt`（默认日语细拆），`original` 对应 `llm_direct_original.txt`（日语适度合并旧版）。两版英语均要求保持单词边界，只在词内按演唱需要拆音节，禁止跨词合并。整曲 API、网页提示词导出和 CLI 共用此选择；API 报告记录实际模板名称及哈希。模板选择只影响新请求，导入 JSON 的语言、读音和分段仍以实际内容为准。
 
 `llm_import.py` 提供手动网页模型交接：本地 `/api/llm/prompt` 生成绑定规范化歌词行的提示词，`/api/llm/import/validate` 和任务入口校验导入 JSON。只接收指定行的原文连续分段和中日英读音，不执行外部内容。导入模式不创建 LLM 客户端或读取接口配置；`align_llm_records` 与接口模式复用原生 PFML / MMS / TIFA 对齐。错误输入在音轨分离前拒绝，已保存的报告记录来源和零次请求。哈希绑定歌词、起止、角色与父行关系，不绑定音频；LRC 最后一句未知结束以 null 表示，避免解码后总时长改变校验标识。
 
