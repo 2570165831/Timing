@@ -5,7 +5,7 @@ import unicodedata
 import math
 from functools import lru_cache
 
-from .schema import Line, Unit
+from .schema import Line, Unit, valid_agent
 from .english_syllables import split_english, current_method
 
 LATIN = re.compile(r"[A-Za-zÀ-ÖØ-öø-ÿ]+(?:['’][A-Za-z]+)*|[0-9]+")
@@ -115,6 +115,11 @@ def parse_lyrics(text: str, duration: float | None) -> list[Line]:
     text = text.lstrip("\ufeff").strip()
     if not text:
         return []
+    if text.startswith('<'):
+        from .ttml_input import parse_ttml
+        lines = parse_ttml(text)
+        validate_lines(lines, duration)
+        return lines
     first = text.splitlines()[0]
     metadata = re.match(r"^\[(?:ar|ti|al|by|offset|length):", first, re.I)
     section = re.fullmatch(r"\[[A-Za-z\u3040-\u30ff\u3400-\u9fff][A-Za-z\u3040-\u30ff\u3400-\u9fff 0-9_-]*\]", first)
@@ -162,8 +167,8 @@ def validate_lines(lines, duration):
             raise ValueError(f"第 {i + 1} 行没有可演唱文字。")
         if not isinstance(line.translation, str) or not isinstance(line.roman, str):
             raise ValueError(f'第 {i + 1} 行的 translation 和 roman 必须是文字。')
-        if line.role not in ("main", "bg") or line.agent not in ("v1", "v2"):
-            raise ValueError("role 仅支持 main/bg，agent 仅支持 v1/v2。")
+        if line.role not in ("main", "bg") or not valid_agent(line.agent):
+            raise ValueError("role 仅支持 main/bg，agent 请使用 v1、v2、v3 等正整数歌手标记（最多9位数字）。")
         if line.language not in ("auto", "ja", "en", "mixed", "zh", "zh-en"):
             raise ValueError("language 仅支持 auto、ja、en、mixed、zh、zh-en。")
         if (line.start is None) != (line.end is None):

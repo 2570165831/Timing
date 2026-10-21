@@ -111,5 +111,5 @@ def test_static_ui_resources_and_five_model_status_contract():
         for asset in ('styles.css','ui-logic.js','app.js'):
             assert client.get('/static/'+asset+'?v=0.8.0').status_code == 200
         status = client.get('/api/status').json()
-    assert status['api_version'] == 6
+    assert status['api_version'] == 7
     assert set(status['models']) == set(status['required_models']) == {'ctc','tifa','singing','bs_lead','separator'}

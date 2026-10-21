@@ -4,7 +4,7 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="timing-token" content="__TIMING_TOKEN__">
 <title>Timing · 歌词打轴</title>
-<link rel="stylesheet" href="/static/styles.css?v=0.12.0">
+<link rel="stylesheet" href="/static/styles.css?v=0.13.0">
 </head>
 <body>
 <main>
@@ -22,10 +22,10 @@
 <p id="audio-route" class="hidden" aria-hidden="true"></p><p id="bg-note" class="hint hidden"></p><p id="audio-error" class="error-note hidden" role="alert"></p>
 </div></section>
 <section class="section" aria-labelledby="lyrics-heading">
-<div class="section-title"><h2 id="lyrics-heading"><label for="lyrics">歌词</label></h2><p>粘贴或导入歌词；提交的以文本框里的内容为准。</p><div id="language-settings" class="language-settings"><label for="language">歌曲语言</label><select id="language" name="language" aria-describedby="language-hint"><option value="mixed">日英混唱</option><option value="ja">日语</option><option value="en">英语</option><option value="zh">中文（普通话）</option><option value="zh-en">中英混唱</option></select><p id="language-hint" class="hint">选择整首歌实际使用的语言；默认日英混唱覆盖日语与英语。汉字不会自动判定为中文：中文歌曲请选“中文（普通话）”，中英混唱请选“中英混唱”；JSON 行上的 language 优先于此选项。</p></div></div>
+<div class="section-title"><h2 id="lyrics-heading"><label for="lyrics">歌词</label></h2><p>粘贴或导入歌词；TTML 会先在本机转换为逐句歌词，提交以文本框里的内容为准。</p><div id="language-settings" class="language-settings"><label for="language">歌曲语言</label><select id="language" name="language" aria-describedby="language-hint"><option value="mixed">日英混唱</option><option value="ja">日语</option><option value="en">英语</option><option value="zh">中文（普通话）</option><option value="zh-en">中英混唱</option></select><p id="language-hint" class="hint">选择整首歌实际使用的语言；默认日英混唱覆盖日语与英语。汉字不会自动判定为中文：中文歌曲请选“中文（普通话）”，中英混唱请选“中英混唱”；JSON 行上的 language 优先于此选项。</p></div></div>
 <div class="section-content">
-<div class="lyrics-box"><pre id="line-numbers" class="line-numbers" aria-hidden="true">1</pre><textarea id="lyrics" name="lyrics" aria-describedby="lyrics-status" spellcheck="false" placeholder="每行一句，重复的副歌也请完整填写。&#10;TXT 是纯歌词；LRC 是每句带时间的歌词。&#10;歌词为必填项。"></textarea><button id="import-lyrics" class="lyrics-import" type="button">导入歌词</button></div>
-<input class="sr-only" id="lyrics_file" type="file" accept=".txt,.lrc,.json" aria-label="导入歌词文件">
+<div class="lyrics-box"><pre id="line-numbers" class="line-numbers" aria-hidden="true">1</pre><textarea id="lyrics" name="lyrics" aria-describedby="lyrics-status" spellcheck="false" placeholder="每行一句，重复的副歌也请完整填写。&#10;TXT 是纯歌词；LRC 是每句带时间的歌词；TTML 会自动转换为逐句 JSON。&#10;歌词为必填项。"></textarea><button id="import-lyrics" class="lyrics-import" type="button">导入歌词</button></div>
+<input class="sr-only" id="lyrics_file" type="file" accept=".txt,.lrc,.json,.ttml" aria-label="导入 TXT、LRC、JSON 或 TTML 歌词文件">
 <div class="lyrics-status-row"><div class="lyrics-status" role="status"><img id="lyrics-status-icon" class="status-icon hidden" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiM0ZTU5NjciIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNMjIgMTEuMDhWMTJhMTAgMTAgMCAxIDEtNS45My05LjE0Ii8+PHBvbHlsaW5lIHBvaW50cz0iMjIgNCAxMiAxNC4wMSA5IDExLjAxIi8+PC9zdmc+" alt=""><span id="lyrics-status">未填写歌词：请粘贴或导入歌词。</span></div><button id="clear-lyrics" class="text-button hidden" type="button">清空歌词</button></div><p id="lyrics-file-note" class="sr-only"></p>
 
 </div></section>
@@ -74,6 +74,6 @@
 <section id="progress" class="progress hidden" tabindex="-1" aria-labelledby="state"><div class="progress-top"><strong id="state" role="status" aria-live="polite">准备中…</strong><span id="job-info"></span></div><p id="result-message"></p><div id="links" class="links"></div><details id="log-details"><summary>处理日志</summary><pre id="log" aria-live="off"></pre></details><p id="error" class="warning" role="alert"></p></section>
 <footer>Timing · 本机计算与保存 · TTML 可直接导入 AMLL；下载后先试听校对，少数字需手工补时间。</footer>
 </main>
-<script src="/static/ui-logic.js?v=0.12.0"></script>
-<script src="/static/app.js?v=0.12.0"></script>
+<script src="/static/ui-logic.js?v=0.13.0"></script>
+<script src="/static/app.js?v=0.13.0"></script>
 </body></html>

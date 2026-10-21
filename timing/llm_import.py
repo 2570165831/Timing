@@ -5,6 +5,7 @@ import re
 
 from .llm_direct import compile_parts, phone_inventory, read_prompt
 from .request_plan import plan_request
+from .ttml_input import is_ttml
 
 MAX_RESULT_BYTES = 16 * 1024**2
 
@@ -17,7 +18,7 @@ def manifest(lyrics):
     except ValueError:
         is_json = False
     items = [{'id':f'line_{i+1:03}', 'text':line.text, 'start':round(float(line.start),6),
-              'end':round(float(line.end),6) if is_json or i < len(lines)-1 else None,
+              'end':round(float(line.end),6) if is_json or is_ttml(lyrics) or i < len(lines)-1 else None,
               'role':line.role, 'agent':line.agent, 'parent':line.parent}
              for i, line in enumerate(lines)]
     identity = json.dumps(items, ensure_ascii=False, sort_keys=True, separators=(',',':'))

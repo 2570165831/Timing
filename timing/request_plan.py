@@ -37,7 +37,7 @@ def plan_request(lyrics, *, duration=None, language='mixed', aligner='auto',
     if english_splitter not in SPLITTERS:
         raise ValueError('不支持的英语音节划分方案。')
     if not isinstance(lyrics, str) or not lyrics.strip('\ufeff \t\r\n'):
-        raise ValueError('请粘贴歌词，或导入 TXT、LRC、JSON 歌词文件。')
+        raise ValueError('请粘贴歌词，或导入 TXT、LRC、JSON、逐行 TTML 歌词文件。')
     if len(lyrics.encode('utf-8')) > MAX_LYRICS_BYTES:
         raise ValueError('歌词最大 2 MB。')
     lines = parse_lyrics(lyrics, duration)
@@ -54,7 +54,7 @@ def plan_request(lyrics, *, duration=None, language='mixed', aligner='auto',
     if aligner == 'auto':
         aligner = 'tifa' if all(anchored) else 'sofa'
     if aligner in ('tifa', 'ctc', 'llm_direct', 'llm_import') and not all(anchored):
-        raise ValueError('TIFA、MMS 和 LLM 整曲识别需要逐句 LRC／带完整时间的 JSON；纯文本请使用自动或 SOFA。')
+        raise ValueError('TIFA、MMS 和 LLM 整曲识别需要逐句 LRC／TTML／带完整时间的 JSON；纯文本请使用自动或 SOFA。')
     if aligner in ('llm_direct', 'llm_import'):
         # Language is supplied by the whole-song response, even for JSON rows.
         for line in lines:

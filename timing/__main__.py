@@ -9,7 +9,7 @@ from .request_plan import ALIGNERS, AUDIO_MODES, LANGUAGES, plan_request
 def main():
     parser = argparse.ArgumentParser(description="Timing 本地中日英歌词打轴 → TTML")
     parser.add_argument("audio", nargs="?", type=Path)
-    parser.add_argument("--lyrics", type=Path, help="必需，UTF-8 TXT/LRC/JSON 正确歌词")
+    parser.add_argument("--lyrics", type=Path, help="必需，UTF-8 TXT/LRC/JSON/逐行 TTML 正确歌词")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--vocals", type=Path, help="可选，同起点同时长的人声轨")
     parser.add_argument("--language", choices=LANGUAGES, default="mixed", help='zh 普通话；zh-en 中英混唱；mixed 日英混唱')
@@ -43,7 +43,7 @@ def main():
             from .llm_import import export_prompt
             from .request_plan import MAX_LYRICS_BYTES
             if not args.lyrics or not args.lyrics.is_file() or args.lyrics.stat().st_size > MAX_LYRICS_BYTES:
-                parser.error('请用 --lyrics 指定最大 2 MB 的 UTF-8 LRC / JSON。')
+                parser.error('请用 --lyrics 指定最大 2 MB 的 UTF-8 LRC / JSON / TTML。')
             inputs = {p.resolve() for p in (args.audio, args.lyrics, args.vocals, args.llm_result) if p}
             if args.export_llm_prompt.resolve() in inputs:
                 parser.error('提示词输出不能覆盖输入文件。')
@@ -57,7 +57,7 @@ def main():
     if not args.audio or not args.audio.is_file():
         parser.error("请指定音频文件，或使用 --serve 打开本地界面。")
     if not args.lyrics or not args.lyrics.is_file():
-        parser.error('请用 --lyrics 指定 TXT、LRC 或 JSON 歌词文件。')
+        parser.error('请用 --lyrics 指定 TXT、LRC、JSON 或逐行 TTML 歌词文件。')
     if args.vocals and not args.vocals.is_file():
         parser.error('找不到导入的人声轨，请检查 --vocals 路径。')
     from .pipeline import run

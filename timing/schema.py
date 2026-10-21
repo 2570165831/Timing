@@ -1,5 +1,10 @@
 from dataclasses import dataclass, field, asdict
 from uuid import uuid4
+import re
+
+
+def valid_agent(value):
+    return isinstance(value, str) and re.fullmatch(r'v[1-9][0-9]{0,8}', value) is not None
 
 
 @dataclass

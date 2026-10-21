@@ -21,17 +21,29 @@ const AUDIO_MODES = ['lead', 'vocals', 'source'];
 const LANGUAGES = ['mixed', 'ja', 'en', 'auto', 'zh', 'zh-en'];
 const REQUIRED_MODELS = ['ctc', 'tifa', 'singing', 'bs_lead', 'separator'];
 const PROMPT_PROFILES = ['fine', 'original'];
+const AGENT_ID = /^v[1-9]\d{0,8}$/;
 
 const KANA = /[\u3040-\u30ff]/;
 const JAPANESE_MARKS = /[々〆〤]/;
 const HAN = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/;
 const LATIN = /[A-Za-zÀ-ÖØ-öø-ÿ]/;
 
+function isTtmlXml(raw) {
+  const text = String(raw || '').replace(/^\uFEFF/, '').trimStart();
+  return text.startsWith('<');
+}
+
 function analyzeLyrics(raw, language, llmDirect = false) {
   const mode = llmDirect ? 'auto' : (LANGUAGES.includes(language) ? language : 'mixed');
   const text = String(raw || '').replace(/^\uFEFF/, '').trim();
-  const result = { empty: !text, error: '', kind: 'text', count: 0, anchored: false, partial: false, hasEnglish: false, hasJapanese: false, hasChinese: false, hasBackground: false, maxKnownLineSeconds: 0, language: mode, effectiveLanguages: [] };
+  const result = { empty: !text, error: '', kind: 'text', count: 0, anchored: false, partial: false, hasEnglish: false, hasJapanese: false, hasChinese: false, hasBackground: false, maxKnownLineSeconds: 0, language: mode, effectiveLanguages: [], needsTtmlConversion: false };
   if (!text) { result.error = '未填写歌词：请粘贴或导入歌词。'; return result; }
+  if (isTtmlXml(text)) {
+    result.kind = 'ttml';
+    result.needsTtmlConversion = true;
+    result.error = 'TTML 歌词需要先转换为逐句歌词；转换完成后才能提交。';
+    return result;
+  }
   const lrc = /^\[(\d+):(\d+(?:\.\d+)?)\](.*)$/; let rows = []; let json = false;
   const first = text.split(/\r?\n/)[0];
   const metadata = /^\[(?:ar|ti|al|by|offset|length):/i.test(first);
@@ -60,7 +72,9 @@ function analyzeLyrics(raw, language, llmDirect = false) {
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     if (!row || typeof row !== 'object' || typeof row.text !== 'string' || !/[\p{L}\p{N}]/u.test(row.text)) { result.error = `第 ${i + 1} 行没有可演唱文字。`; return result; }
-    if (!['main', 'bg'].includes(row.role === undefined ? 'main' : row.role) || !['v1', 'v2'].includes(row.agent === undefined ? 'v1' : row.agent) || !LANGUAGES.includes(row.language === undefined ? 'auto' : row.language)) { result.error = `第 ${i + 1} 行的角色、歌手或语言标记无效。`; return result; }
+    if (!['main', 'bg'].includes(row.role === undefined ? 'main' : row.role) || !LANGUAGES.includes(row.language === undefined ? 'auto' : row.language)) { result.error = `第 ${i + 1} 行的角色或语言标记无效。`; return result; }
+    const agent = row.agent === undefined ? 'v1' : row.agent;
+    if (typeof agent !== 'string' || !AGENT_ID.test(agent)) { result.error = `第 ${i + 1} 行的歌手 ID 无效；须为 v1 这类格式：v 后跟 1–9 开头、最多 9 位的数字（如 v1、v3、v1000）。`; return result; }
     if (['translation', 'roman'].some(key => key in row && typeof row[key] !== 'string')) { result.error = `第 ${i + 1} 行的 translation 和 roman 必须是文字。`; return result; }
     const start = row.start != null, end = row.end != null;
     if (json && (start !== end || (start && (!Number.isFinite(row.start) || !Number.isFinite(row.end) || row.start < 0 || row.end <= row.start)))) { result.error = `第 ${i + 1} 行需提供有效的 start / end 起止时间。`; return result; }

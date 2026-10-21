@@ -285,7 +285,7 @@ def test_prompt_endpoint_is_local_and_returns_only_handoff_payload(api):
 
     assert response.status_code == 200
     assert set(response.json()) == {'prompt', 'request_id', 'lines'}
-    assert client.get('/api/status').json()['api_version'] == 6
+    assert client.get('/api/status').json()['api_version'] == 7
 
 
 def test_import_validate_endpoint_accepts_utf8_file_and_reports_manual_rows(api):

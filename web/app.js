@@ -7,8 +7,8 @@ const storage = { get(key) { try { return localStorage.getItem('timing-' + key);
 const show = (id, visible) => { $(id).classList.toggle('hidden', !visible); };
 const ICON_EYE = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiM0ZTU5NjciIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNMTcuOTQgMTcuOTRBMTAuMDcgMTAuMDcgMCAwIDEgMTIgMjBjLTcgMC0xMS04LTExLThhMTguNDUgMTguNDUgMCAwIDEgNS4wNi01Ljk0TTkuOSA0LjI0QTkuMTIgOS4xMiAwIDAgMSAxMiA0YzcgMCAxMSA4IDExIDhhMTguNSAxOC41IDAgMCAxLTIuMTYgMy4xOW0tNi43Mi0xLjA3YTMgMyAwIDEgMS00LjI0LTQuMjQiLz48bGluZSB4MT0iMSIgeTE9IjEiIHgyPSIyMyIgeTI9IjIzIi8+PC9zdmc+';
 const ICON_EYE_OFF = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IiM0ZTU5NjciIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJNMSAxMnM0LTggMTEtOCAxMSA4IDExIDgtNCA4LTExIDgtMTEtOC0xMS04eiIvPjxjaXJjbGUgY3g9IjEyIiBjeT0iMTIiIHI9IjMiLz48L3N2Zz4=';
-let current, parsed, busy = false, testBusy = false, importing = false, service = null, serviceError = '', timer = null, active = null, lyricsFileName = '', fileError = '', audioError = '', pollFailures = 0;
-let importSequence = 0;
+let current, parsed, busy = false, testBusy = false, importing = false, service = null, serviceError = '', timer = null, active = null, lyricsFileName = '', lyricsImportNote = '', fileError = '', audioError = '', pollFailures = 0;
+let importSequence = 0, ttmlTimer = null, ttmlConverting = false;
 const MAX_LLM_RESULT_BYTES = 16 * 1024 ** 2;
 let promptText = '', promptRequestId = '', promptLines = 0, promptBusy = false, promptMessage = '', promptWarning = false;
 let checkBusy = false, checkMessage = '', checkWarning = false, resultImporting = false;
@@ -24,6 +24,16 @@ $('llm-prompt-profile').value = preferredPromptProfile;
 const allowedAudio = new Set(['wav', 'mp3', 'flac', 'm4a', 'ogg', 'opus', 'aac', 'wma', 'mp4', 'aiff']);
 function audioFileError(file) { if (!file) return ''; if (!file.size) return '音频文件为空，请重新选择。'; if (file.size > 1024 ** 3) return '音频最大 1 GB，请选择较小的文件。'; if (!allowedAudio.has(file.name.split('.').pop().toLowerCase())) return '不支持此音频格式，请选择 WAV、FLAC、MP3 或 M4A 等音频。'; return ''; }
 function sizeText(bytes) { return bytes >= 1024 ** 2 ? (bytes / 1024 ** 2).toFixed(1) + ' MB' : Math.max(1, Math.round(bytes / 1024)) + ' KB'; }
+async function requestTtmlConversion(xml) {
+  const data = new FormData(); data.set('lyrics', xml);
+  const response = await fetch('/api/lyrics/ttml', { method: 'POST', headers: { 'X-Timing-Token': token }, body: data });
+  const result = await responseData(response, '无法转换 TTML 歌词');
+  if (!response.ok) throw new Error(messageFrom(result, '无法转换 TTML 歌词。'));
+  const lines = Number(result.lines);
+  if (typeof result.lyrics !== 'string' || !result.lyrics.trim()) throw new Error('TTML 转换结果没有返回逐句歌词。');
+  if (!Number.isInteger(lines) || lines < 1) throw new Error('TTML 转换结果缺少有效行数。');
+  return { lyrics: result.lyrics, lines };
+}
 function llmResultText() { return $('llm-result').value.trim(); }
 function invalidateCheck(reason) { ++checkSequence; checkBusy = false; checkMessage = reason; checkWarning = true; }
 function invalidateImportBinding(reason) {
@@ -36,14 +46,14 @@ function renderImportPanel() {
   if (!current?.showImport) return;
   const audio = $('audio').files[0], result = llmResultText();
   $('llm-import-audio-name').textContent = audio ? '当前音频：' + audio.name : '尚未选择音频；可以先准备提示词，最终生成时必须选择完整歌曲。';
-  $('generate-prompt').disabled = busy || promptBusy || !current.promptReady;
+  $('generate-prompt').disabled = busy || promptBusy || importing || ttmlConverting || !current.promptReady;
   $('copy-prompt').classList.toggle('hidden', !promptText); $('download-prompt').classList.toggle('hidden', !promptText);
   $('copy-prompt').disabled = !promptText; $('download-prompt').disabled = !promptText;
   $('llm-prompt').textContent = promptText; $('llm-prompt-box').classList.toggle('hidden', !promptText);
   $('llm-prompt-status').textContent = promptMessage || (current.promptReady ? '生成提示词后，与完整音频一起发送给你的网页 LLM。' : '需要带逐句时间的完整歌词后才能生成提示词。');
   $('llm-prompt-status').classList.toggle('warning', promptWarning || !current.promptReady);
   $('import-llm-result').disabled = busy || resultImporting;
-  $('validate-llm-result').disabled = busy || checkBusy || !current.promptReady || !result;
+  $('validate-llm-result').disabled = busy || checkBusy || ttmlConverting || !current.promptReady || !result;
   $('llm-result-status').textContent = checkMessage || (!result ? '把返回的 JSON 粘贴到上方，或导入 .json 文件。提交时以当前文本为准。' : '当前文本会随提交上传；可以先用“检查结果”核对歌词绑定和完整度。');
   $('llm-result-status').classList.toggle('warning', checkWarning);
 }
@@ -83,13 +93,13 @@ function updateUI() {
   $('bg-note').textContent = bgNote ? (vocals ? '背景歌词使用导入的人声（含和声）对齐。' : '背景歌词使用分离出的完整人声（含和声）对齐。') : '';
   $('audio-description').textContent = audio ? route : '选择歌曲文件，并按需要指定人声处理方式。';
   const lang = describeLanguages(parsed);
-  $('lyrics-status').textContent = importing ? '正在导入歌词…' : fileError || (parsed.empty ? '请粘贴歌词，或导入歌词文件。' : parsed.error) || (parsed.anchored ? '已识别逐句时间' : '已识别纯文本') + ' · ' + parsed.count + ' 行' + (lang ? ' · ' + lang : '');
-  $('lyrics-status').title = lyricsFileName ? '已导入 ' + lyricsFileName + '，提交以当前文本框为准。' : '';
-  $('lyrics-status').classList.toggle('warning', Boolean(fileError || (parsed.error && !parsed.empty)));
-  show('lyrics-status-icon', !fileError && !parsed.error);
-  show('clear-lyrics', Boolean($('lyrics').value || fileError));
+  $('lyrics-status').textContent = ttmlConverting ? '正在转换 TTML 歌词…' : importing ? '正在导入歌词…' : fileError || (parsed.empty ? '请粘贴歌词，或导入歌词文件。' : parsed.error) || (parsed.anchored ? '已识别逐句时间' : '已识别纯文本') + ' · ' + parsed.count + ' 行' + (lang ? ' · ' + lang : '');
+  $('lyrics-status').title = lyricsImportNote;
+  $('lyrics-status').classList.toggle('warning', Boolean(fileError || (!ttmlConverting && parsed.error && !parsed.empty)));
+  show('lyrics-status-icon', !ttmlConverting && !fileError && !parsed.error);
+  show('clear-lyrics', Boolean($('lyrics').value || fileError || ttmlConverting));
   $('clear-lyrics').textContent = !$('lyrics').value && fileError ? '清除导入错误' : '清空歌词';
-  $('lyrics-file-note').textContent = lyricsFileName ? '已导入 ' + lyricsFileName + '；提交以当前文本框为准。' : '';
+  $('lyrics-file-note').textContent = lyricsImportNote;
   const visualLines = $('lyrics').value.split('\n').length;
   $('line-numbers').textContent = Array.from({ length: Math.min(10000, visualLines) }, (_, i) => i + 1).join('\n');
   $('line-numbers').scrollTop = $('lyrics').scrollTop;
@@ -109,7 +119,7 @@ function updateUI() {
     : '按发音拆分；拆不准时保留整词。';
   show('alignment-error', Boolean(current.error && current.error !== parsed.error)); $('alignment-error').textContent = current.error;
   audioError = audioFileError(audio) || audioFileError(vocals); show('audio-error', Boolean(audioError)); $('audio-error').textContent = audioError;
-  $('run-summary').textContent = !audio ? '选择歌曲和歌词，生成 TTML' : !current.valid ? '填写或修正歌词后即可提交' : '将用 ' + audio.name + ' 和 ' + parsed.count + ' 行歌词生成 TTML';
+  $('run-summary').textContent = ttmlConverting ? '正在转换 TTML 歌词；完成后才能提交' : !audio ? '选择歌曲和歌词，生成 TTML' : !current.valid ? '填写或修正歌词后即可提交' : '将用 ' + audio.name + ' 和 ' + parsed.count + ' 行歌词生成 TTML';
   $('run-disclosure').textContent = current.engine === 'llm_import'
     ? '只生成本地提示词并接收你带回的 JSON；不发送音频、歌词或凭据到网页 LLM。'
     : current.engine === 'llm_direct'
@@ -139,11 +149,11 @@ function renderService() {
   $('model-status').classList.toggle('warning', Boolean(serviceError || missing.length));
   show('retry-models', Boolean(serviceError || missing.length));
   const importMissing = current.showImport && (!llmResultText() || llmResultText().length > MAX_LLM_RESULT_BYTES);
-  $('submit').disabled = busy || importing || (current.showImport && resultImporting) || !service || Boolean(serviceError) || missing.length > 0 || !current.valid || !$('audio').files.length || Boolean(fileError || audioError) || importMissing;
+  $('submit').disabled = busy || importing || ttmlConverting || (current.showImport && resultImporting) || !service || Boolean(serviceError) || missing.length > 0 || !current.valid || !$('audio').files.length || Boolean(fileError || audioError) || importMissing;
 }
 async function checkModels() {
   serviceError = ''; service = null; renderService();
-  try { const response = await fetch('/api/status'); if (!response.ok) throw new Error(); const status = await response.json(); if (status.app !== 'Timing' || status.api_version !== 6) throw new Error('version'); service = status; }
+  try { const response = await fetch('/api/status'); if (!response.ok) throw new Error(); const status = await response.json(); if (status.app !== 'Timing' || status.api_version !== 7) throw new Error('version'); service = status; }
   catch (error) { serviceError = error.message === 'version' ? '服务版本不匹配，请重新启动应用后刷新。' : '连接本机服务失败，请运行 启动.cmd 后重试。'; }
   renderService();
 }
@@ -232,6 +242,26 @@ async function checkImportResult() {
 }
 function link(label, url, primary = false) { const element = document.createElement('a'); element.textContent = label; element.href = url; element.className = 'download' + (primary ? ' primary' : ''); element.download = ''; $('links').append(element); }
 function stopPolling() { clearTimeout(timer); timer = null; active = null; busy = false; storage.remove('job'); updateUI(); }
+function acceptTtmlConversion(converted, note) {
+  $('lyrics').value = converted.lyrics;
+  ++lyricsRevision; fileError = ''; lyricsImportNote = note;
+  invalidateImportBinding('TTML 歌词已转换，请重新生成提示词并重新检查结果。');
+}
+function schedulePastedTtmlConversion(sequence, revision, xml) {
+  ttmlConverting = true;
+  ttmlTimer = setTimeout(async () => {
+    ttmlTimer = null;
+    try {
+      const converted = await requestTtmlConversion(xml);
+      if (sequence !== importSequence || revision !== lyricsRevision) return;
+      acceptTtmlConversion(converted, '已将粘贴的 TTML 转换为逐句歌词（' + converted.lines + ' 行）；提交以当前文本框为准。');
+    } catch (error) {
+      if (sequence === importSequence && revision === lyricsRevision) fileError = error.message || '无法转换 TTML 歌词。';
+    } finally {
+      if (sequence === importSequence) { ttmlConverting = false; updateUI(); }
+    }
+  }, 300);
+}
 function completeJob(id, job) {
   const result = job.result || {}; stopPolling(); $('links').replaceChildren(); $('error').textContent = '';
   if (job.state === 'complete') {
@@ -303,21 +333,43 @@ $('clear-vocals').addEventListener('click', () => { $('vocals').value = ''; upda
 $('audio-mode').addEventListener('change', updateUI);
 $('lyrics_file').addEventListener('change', async () => {
   const file = $('lyrics_file').files[0]; if (!file) return;
-  const sequence = ++importSequence; fileError = ''; importing = true; updateUI();
+  const sequence = ++importSequence, revision = lyricsRevision;
+  if (ttmlTimer !== null) { clearTimeout(ttmlTimer); ttmlTimer = null; }
+  ttmlConverting = false; importing = true; fileError = ''; lyricsFileName = ''; lyricsImportNote = ''; updateUI();
   try {
     if (file.size > 2 * 1024 ** 2) throw new Error('歌词文件最大 2 MB。');
     if (!file.size) throw new Error('歌词文件为空。');
-    const text = new TextDecoder('utf-8', { fatal: true }).decode(await file.arrayBuffer()).replace(/^\uFEFF/, '');
-    if (sequence !== importSequence) return;
-    $('lyrics').value = text; lyricsFileName = file.name; ++lyricsRevision; invalidateImportBinding('歌词已更改，请重新生成提示词并重新检查结果。');
+    const bytes = await file.arrayBuffer();
+    let text;
+    try { text = new TextDecoder('utf-8', { fatal: true }).decode(bytes).replace(/^\uFEFF/, ''); }
+    catch { throw new Error('歌词文件请保存为 UTF-8 编码，再重新导入。'); }
+    if (sequence !== importSequence || revision !== lyricsRevision) return;
+    let lyrics = text, converted = null;
+    if (file.name.toLowerCase().endsWith('.ttml') || isTtmlXml(text)) {
+      ttmlConverting = true; updateUI();
+      converted = await requestTtmlConversion(text);
+      if (sequence !== importSequence || revision !== lyricsRevision) return;
+      lyrics = converted.lyrics;
+    }
+    $('lyrics').value = lyrics; lyricsFileName = file.name;
+    lyricsImportNote = converted
+      ? '已从 ' + file.name + ' 导入 TTML 并转换为逐句歌词（' + converted.lines + ' 行）；提交以当前文本框为准。'
+      : '已导入 ' + file.name + '；提交以当前文本框为准。';
+    ++lyricsRevision; invalidateImportBinding('歌词已更改，请重新生成提示词并重新检查结果。');
   } catch (error) {
-    if (sequence !== importSequence) return;
-    fileError = error instanceof TypeError ? '歌词文件请保存为 UTF-8 编码，再重新导入。' : error.message;
-  } finally { if (sequence === importSequence) { importing = false; $('lyrics_file').value = ''; updateUI(); } }
+    if (sequence !== importSequence || revision !== lyricsRevision) return;
+    fileError = error.message;
+  } finally { if (sequence === importSequence) { importing = false; ttmlConverting = false; $('lyrics_file').value = ''; updateUI(); } }
 });
-$('lyrics').addEventListener('input', () => { ++importSequence; ++lyricsRevision; importing = false; fileError = ''; invalidateImportBinding('歌词已更改，请重新生成提示词并重新检查结果。'); updateUI(); });
+$('lyrics').addEventListener('input', () => {
+  const sequence = ++importSequence, revision = ++lyricsRevision, text = $('lyrics').value;
+  if (ttmlTimer !== null) { clearTimeout(ttmlTimer); ttmlTimer = null; }
+  ttmlConverting = false; importing = false; fileError = '';
+  if (isTtmlXml(text)) { lyricsFileName = ''; lyricsImportNote = ''; schedulePastedTtmlConversion(sequence, revision, text); }
+  invalidateImportBinding('歌词已更改，请重新生成提示词并重新检查结果。'); updateUI();
+});
 $('lyrics').addEventListener('scroll', () => { $('line-numbers').scrollTop = $('lyrics').scrollTop; });
-$('clear-lyrics').addEventListener('click', () => { ++importSequence; ++lyricsRevision; importing = false; $('lyrics').value = ''; $('lyrics_file').value = ''; lyricsFileName = ''; fileError = ''; invalidateImportBinding('歌词已更改，请重新生成提示词并重新检查结果。'); updateUI(); });
+$('clear-lyrics').addEventListener('click', () => { ++importSequence; if (ttmlTimer !== null) { clearTimeout(ttmlTimer); ttmlTimer = null; } ++lyricsRevision; ttmlConverting = false; importing = false; $('lyrics').value = ''; $('lyrics_file').value = ''; lyricsFileName = ''; lyricsImportNote = ''; fileError = ''; invalidateImportBinding('歌词已更改，请重新生成提示词并重新检查结果。'); updateUI(); });
 $('generate-prompt').addEventListener('click', generatePrompt);
 $('copy-prompt').addEventListener('click', copyPrompt);
 $('download-prompt').addEventListener('click', downloadPrompt);

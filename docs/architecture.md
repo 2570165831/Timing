@@ -33,7 +33,7 @@ LLM 可选，用于拆分文字和确认读音。`llm_splitter.py`、`audio_read
 | 编排 | `pipeline.py`、`request_plan.py` | 处理流程编排、请求校验与计划 |
 | 音源 | `sources.py`、`audio.py`、`separation.py`、`bs_lead.py` | 解码、主唱 / 人声分离、时间线保持与重建检查 |
 | 对齐 | `alignment.py`、`ctc.py`、`singing.py`、`tifa.py`、`tifa_worker.py` | 各对齐路线调度、加载本地权重、映射和检查原生时间 |
-| 语言与结构 | `text.py`、`numeric_lyrics.py`、`japanese_loanwords.py`、`english_syllables.py`、`tifa_pronunciation.py`、`schema.py` | 歌词、读音、显示单元及音素对应（中文为普通话拼音） |
+| 语言与结构 | `text.py`、`ttml_input.py`、`numeric_lyrics.py`、`japanese_loanwords.py`、`english_syllables.py`、`tifa_pronunciation.py`、`schema.py` | 歌词、逐行 TTML 输入、读音、显示单元及音素对应（中文为普通话拼音） |
 | 报告与导出 | `reporting.py`、`ttml.py` | 复核报告、字符保留、结构 / 时间校验、AMLL TTML 编辑初稿 |
 | 安装 | `安装.cmd`、`setup.ps1`、`scripts/setup_helpers.ps1`、`scripts/verify_gpu.py`、`model_catalog.py`、`scripts/download_*.py` | 工具引导、真实 CUDA 检查、五组必需模型的显式下载；运行期间不调用安装器 |
 
@@ -69,7 +69,7 @@ Node 仅用于页面逻辑测试，应用运行不需要 Node。需要模型资�
 
 ## 已整理与保留的债务
 
-安装固定为五组必需模型（MMS、TIFA、SOFA、BS 主唱、Kim 人声），没有可选安装配置。旧 Qwen、旧 aufr33 主唱、HubertFA 和 Anvuew 的模型及代码已删除；历史试验和单歌恢复脚本的源码备份位于本机 `.runtime/refactor61/before/`，不进入 Git。`pytest` 已从运行依赖移至开发依赖；源码版本为 0.12.0，服务接口版本为 6，页面状态检查对应接口版本 6。
+安装固定为五组必需模型（MMS、TIFA、SOFA、BS 主唱、Kim 人声），没有可选安装配置。旧 Qwen、旧 aufr33 主唱、HubertFA 和 Anvuew 的模型及代码已删除；历史试验和单歌恢复脚本的源码备份位于本机 `.runtime/refactor61/before/`，不进入 Git。`pytest` 已从运行依赖移至开发依赖；源码版本为 0.13.0，服务接口版本为 7，页面状态检查对应接口版本 7。
 
 目前仍是单进程应用。API 的队列防止网页任务并发占用 GPU；CLI 是独立进程，使用时不要同时启动多个 GPU 作业。任务执行中重启会中断计算，不会自动续算。
 
@@ -82,6 +82,8 @@ LLM 整曲模式忽略整首和 JSON 行级的手选语言；`llm_direct.json` �
 `llm_import.py` 提供手动网页模型交接：本地 `/api/llm/prompt` 生成绑定规范化歌词行的提示词，`/api/llm/import/validate` 和任务入口校验导入 JSON。只接收指定行的原文连续分段和中日英读音，不执行外部内容。导入模式不创建 LLM 客户端或读取接口配置；`align_llm_records` 与接口模式复用原生 PFML / MMS / TIFA 对齐。错误输入在音轨分离前拒绝，已保存的报告记录来源和零次请求。哈希绑定歌词、起止、角色与父行关系，不绑定音频；LRC 最后一句未知结束以 null 表示，避免解码后总时长改变校验标识。
 
 `singing.py` 仍同时包含 SOFA 适配和共享音素处理，后续可以继续拆分。
+
+逐行 TTML 输入由 `ttml_input.py` 使用已有的 `defusedxml` 安全解析，`text.parse_lyrics` 在 CLI、API 和 pipeline 共用入口调用。AMLL 句子和 section 使用绝对媒体时间，不能按父级起点相加。网页通过本机 `/api/lyrics/ttml` 把 XML 规范化为带时间 JSON 后复用纯 `ui-logic.js` 状态规则；异步转换期间不能提交或生成提示词。LLM manifest 保留 TTML 最后一句的显式结束，规范化前后绑定标识一致。输入旧字时间不直接传入对齐单元。
 
 当前交付方式是源码 checkout，用户可双击 `安装.cmd` 或运行 `setup.ps1`。网页、词典和安装器按源码根目录寻址，尚未承诺 `pip install` wheel 后的独立资源布局，也不发布 PyPI 包。
 

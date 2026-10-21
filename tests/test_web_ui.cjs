@@ -132,6 +132,10 @@ const JSON_LYRICS = '[{"text":"光の中へ","start":12.34,"end":18.0},' +
   '{"text":"Run into the light","start":18.0,"end":24.5}]';
 const JSON_BACKGROUND = '[{"text":"光の中へ","start":12.34,"end":18.0,"role":"main"},' +
   '{"text":"oh oh","start":13.0,"end":17.0,"role":"bg","parent":0}]';
+const TTML_XML = '<?xml version="1.0" encoding="UTF-8"?>' +
+  '<tt xmlns="http://www.w3.org/ns/ttml"><body><div begin="12.34s" end="18s">' +
+  '<p begin="12.34s" end="18s">光の中へ</p></div></body></tt>';
+const TTML_NORMALIZED = '[{"text":"光の中へ","start":12.34,"end":18.0}]';
 
 // A lyrics descriptor shaped like the analyzeLyrics() result.
 function lyrics(overrides) {
@@ -162,6 +166,156 @@ function preferences(overrides) {
     hasVocals: false,
     audioMode: 'lead',
   }, overrides);
+}
+
+function deferred() {
+  let resolve, reject;
+  const promise = new Promise((ok, fail) => { resolve = ok; reject = fail; });
+  return { promise, resolve, reject };
+}
+
+function fakeResponse(status, body) {
+  return { ok: status >= 200 && status < 300, status, json: async () => body };
+}
+
+function fakeClassList() {
+  const values = new Set();
+  return {
+    add: (...names) => names.forEach((name) => values.add(name)),
+    remove: (...names) => names.forEach((name) => values.delete(name)),
+    contains: (name) => values.has(name),
+    toggle(name, force) {
+      const visible = force === undefined ? !values.has(name) : Boolean(force);
+      if (visible) values.add(name); else values.delete(name);
+      return visible;
+    },
+  };
+}
+
+function fakeElement(id) {
+  const listeners = new Map();
+  const element = {
+    id, tagName: 'DIV', value: '', checked: false, disabled: false, required: false,
+    hidden: false, files: [], options: [], textContent: '', title: '', className: '',
+    scrollTop: 0, scrollHeight: 0, open: false, type: 'text', classList: fakeClassList(),
+    addEventListener(type, handler) {
+      if (!listeners.has(type)) listeners.set(type, []);
+      listeners.get(type).push(handler);
+    },
+    async dispatch(type, extra = {}) {
+      for (const handler of listeners.get(type) || []) {
+        await handler(Object.assign({ type, target: element, preventDefault() {} }, extra));
+      }
+    },
+    querySelector(selector) {
+      const match = /^option\[value=["'](.+)["']\]$/.exec(selector);
+      return match ? element.options.find((option) => option.value === match[1]) || null : null;
+    },
+    closest: () => null,
+    append(child) { if (!element.children) element.children = []; element.children.push(child); },
+    replaceChildren(...children) { element.children = children; },
+    setAttribute(name, value) { if (!element.attributes) element.attributes = {}; element.attributes[name] = String(value); },
+    removeAttribute(name) { if (element.attributes) delete element.attributes[name]; },
+    setCustomValidity() {},
+    checkValidity: () => true,
+    reportValidity: () => true,
+    focus() {},
+    click() {},
+  };
+  return element;
+}
+
+async function makeAppHarness() {
+  const elements = new Map();
+  const timers = new Map();
+  const ttmlRequests = [], statusRequests = [];
+  let nextTimer = 1;
+  let ttmlHandler = async () => fakeResponse(500, { detail: 'unexpected TTML request' });
+
+  const element = (id) => {
+    if (!elements.has(id)) elements.set(id, fakeElement(id));
+    return elements.get(id);
+  };
+  const setOptions = (id, values) => {
+    const target = element(id);
+    target.tagName = 'SELECT';
+    target.options = values.map((value) => ({ value, textContent: value, disabled: false, hidden: false }));
+  };
+  setOptions('aligner', optionValues(html, 'aligner'));
+  setOptions('audio-mode', optionValues(html, 'audio-mode'));
+  setOptions('language', optionValues(html, 'language'));
+  setOptions('english-splitter', ['syllabify', 'pyphen', 'llm']);
+  setOptions('llm-prompt-profile', ['fine', 'original']);
+  element('aligner').value = 'auto';
+  element('audio-mode').value = 'lead';
+  element('language').value = 'mixed';
+  element('english-splitter').value = 'syllabify';
+  element('llm-prompt-profile').value = 'fine';
+  element('syllables').checked = true;
+  element('llm-thinking-mode').value = 'default';
+  element('llm-thinking-format').value = 'reasoning_effort';
+  element('llm-api-key-header').value = 'Authorization';
+  element('llm-api-key-format').value = 'auto';
+
+  const document = {
+    getElementById: element,
+    querySelector: (selector) => selector === 'meta[name="timing-token"]' ? { content: 'test-token' } : null,
+    createElement: (tag) => fakeElement('created-' + tag),
+    createRange: () => ({ selectNodeContents() {} }),
+    execCommand: () => true,
+  };
+  const storageValues = new Map();
+  const context = vm.createContext({
+    document,
+    window: { getSelection: () => ({ removeAllRanges() {}, addRange() {} }) },
+    localStorage: {
+      getItem: (key) => storageValues.has(key) ? storageValues.get(key) : null,
+      setItem: (key, value) => storageValues.set(key, String(value)),
+      removeItem: (key) => storageValues.delete(key),
+    },
+    navigator: {},
+    fetch: async (url, init = {}) => {
+      if (url === '/api/status') {
+        statusRequests.push(init);
+        return fakeResponse(200, { app: 'Timing', api_version: 7, version: 'test', queued: 0,
+          models: { ctc: true, tifa: true, singing: true, bs_lead: true, separator: true } });
+      }
+      if (url === '/api/lyrics/ttml') {
+        ttmlRequests.push({ init, body: init.body });
+        return ttmlHandler(init, ttmlRequests.length);
+      }
+      throw new Error('unexpected request: ' + url);
+    },
+    setTimeout: (handler, delay) => {
+      const id = nextTimer++;
+      timers.set(id, { handler, delay });
+      return id;
+    },
+    clearTimeout: (id) => timers.delete(id),
+    FormData, Blob, TextEncoder, TextDecoder,
+    URL: { createObjectURL: () => 'blob:test', revokeObjectURL() {} },
+  });
+
+  vm.runInContext(uiSource, context, { filename: 'ui-logic.js' });
+  vm.runInContext(appSource, context, { filename: 'app.js' });
+  const settle = async (rounds = 8) => { for (let i = 0; i < rounds; i++) await Promise.resolve(); };
+  await settle();
+  return {
+    setTtmlHandler(handler) { ttmlHandler = handler; },
+    element,
+    dispatch: (id, type) => element(id).dispatch(type),
+    runNextTimer() {
+      const next = timers.entries().next();
+      assert.equal(next.done, false, 'expected a pending lyric timer');
+      const [id, timer] = next.value;
+      timers.delete(id);
+      return Promise.resolve(timer.handler());
+    },
+    timerCount: () => timers.size,
+    settle,
+    ttmlRequests,
+    statusRequests,
+  };
 }
 
 /* ------------------------------------------------------------------ *
@@ -236,8 +390,8 @@ describe('shipped files', () => {
     assert.ok(!/data\.set\('(?:separate|lead)'/.test(appSource), 'the removed separate/lead fields must not be sent');
   });
 
-  test('web/app.js pins the status guard to api_version 6', () => {
-    assert.match(appSource, /api_version\s*!==\s*6/);
+  test('web/app.js pins the status guard to api_version 7', () => {
+    assert.match(appSource, /api_version\s*!==\s*7/);
   });
 
   test('the page exposes the song-language selector as a visible lyrics setting', () => {
@@ -264,8 +418,8 @@ describe('shipped files', () => {
     assert.ok(html.includes('中文读音结果以拼音给出'), 'the helper note must say Mandarin readings come back as pinyin');
   });
 
-  test('the shipped assets carry the 0.12.0 version stamp', () => {
-    for (const asset of ['/static/styles.css?v=0.12.0', '/static/ui-logic.js?v=0.12.0', '/static/app.js?v=0.12.0']) {
+  test('the shipped assets carry the 0.13.0 version stamp', () => {
+    for (const asset of ['/static/styles.css?v=0.13.0', '/static/ui-logic.js?v=0.13.0', '/static/app.js?v=0.13.0']) {
       assert.ok(html.includes(asset), 'missing versioned asset ' + asset);
     }
   });
@@ -362,6 +516,112 @@ describe('shipped files', () => {
     assert.ok(html.includes('id="vocals"'), 'optional vocals input missing');
     assert.ok(html.includes('保留主唱和和声'), 'the full-vocals option must spell out that harmonies are kept');
   });
+
+  test('the lyrics picker accepts TTML and describes its local conversion', () => {
+    assert.match(html, /id="lyrics_file"[^>]*accept="[^"]*\.ttml/);
+    assert.ok(html.includes('TTML 会先在本机转换为逐句歌词'));
+    assert.ok(appSource.includes("fetch('/api/lyrics/ttml'"));
+    assert.ok(appSource.includes("data.set('lyrics', xml)"));
+    assert.ok(appSource.includes("headers: { 'X-Timing-Token': token }"));
+    assert.match(appSource, /ttmlConverting \? '正在转换 TTML 歌词…'/);
+    assert.match(appSource, /\$\('generate-prompt'\)\.disabled = busy \|\| promptBusy \|\| importing \|\| ttmlConverting/);
+  });
+});
+
+describe('TTML conversion wiring', () => {
+  test('a pasted TTML conversion is requested once and a late reply cannot replace newer text', async () => {
+    const app = await makeAppHarness();
+    const response = deferred();
+    app.setTtmlHandler(() => response.promise);
+    const lyrics = app.element('lyrics');
+    lyrics.value = TTML_XML;
+    await app.dispatch('lyrics', 'input');
+
+    assert.equal(app.element('lyrics-status').textContent, '正在转换 TTML 歌词…');
+    assert.equal(app.timerCount(), 1);
+    const conversion = app.runNextTimer();
+    await app.settle();
+    assert.equal(app.ttmlRequests.length, 1);
+    assert.equal(app.ttmlRequests[0].body.get('lyrics'), TTML_XML);
+    assert.equal(app.ttmlRequests[0].init.headers['X-Timing-Token'], 'test-token');
+
+    await app.dispatch('syllables', 'change');
+    assert.equal(app.ttmlRequests.length, 1, 'unrelated UI renders must not repeat the conversion');
+    lyrics.value = '手动输入的新歌词';
+    await app.dispatch('lyrics', 'input');
+    response.resolve(fakeResponse(200, { lyrics: TTML_NORMALIZED, lines: 1 }));
+    await conversion;
+    await app.settle();
+
+    assert.equal(lyrics.value, '手动输入的新歌词');
+    assert.match(app.element('lyrics-status').textContent, /已识别纯文本 · 1 行/);
+    assert.equal(app.element('lyrics-status').title, '');
+  });
+
+  test('clearing lyrics cancels a pending pasted TTML conversion', async () => {
+    const app = await makeAppHarness();
+    const response = deferred();
+    app.setTtmlHandler(() => response.promise);
+    app.element('lyrics').value = TTML_XML;
+    await app.dispatch('lyrics', 'input');
+    const conversion = app.runNextTimer();
+    await app.settle();
+    await app.element('clear-lyrics').dispatch('click');
+    response.resolve(fakeResponse(200, { lyrics: TTML_NORMALIZED, lines: 1 }));
+    await conversion;
+    await app.settle();
+
+    assert.equal(app.element('lyrics').value, '');
+    assert.equal(app.element('lyrics-file-note').textContent, '');
+  });
+
+  test('a .ttml file is converted to normalized JSON before entering the textarea', async () => {
+    const app = await makeAppHarness();
+    app.setTtmlHandler(async () => fakeResponse(200, { lyrics: TTML_NORMALIZED, lines: 1 }));
+    const bytes = new TextEncoder().encode(TTML_XML);
+    app.element('lyrics_file').files = [{ name: 'Song.TTML', size: bytes.byteLength, arrayBuffer: async () => bytes.buffer }];
+    app.element('lyrics').value = '旧的纯歌词';
+
+    await app.dispatch('lyrics_file', 'change');
+
+    assert.equal(app.ttmlRequests.length, 1);
+    assert.equal(app.ttmlRequests[0].body.get('lyrics'), TTML_XML);
+    assert.equal(app.element('lyrics').value, TTML_NORMALIZED);
+    assert.equal(app.element('lyrics-file-note').textContent,
+      '已从 Song.TTML 导入 TTML 并转换为逐句歌词（1 行）；提交以当前文本框为准。');
+    assert.match(app.element('lyrics-status').textContent, /已识别逐句时间 · 1 行/);
+  });
+
+  test('editing during a file read prevents the older file result from taking over', async () => {
+    const app = await makeAppHarness();
+    const bytes = deferred();
+    app.setTtmlHandler(async () => fakeResponse(200, { lyrics: TTML_NORMALIZED, lines: 1 }));
+    app.element('lyrics_file').files = [{ name: 'raced.ttml', size: 100, arrayBuffer: () => bytes.promise }];
+    const importing = app.dispatch('lyrics_file', 'change');
+    await app.settle();
+    app.element('lyrics').value = '用户先写入的新歌词';
+    await app.dispatch('lyrics', 'input');
+    bytes.resolve(new TextEncoder().encode(TTML_XML).buffer);
+    await importing;
+    await app.settle();
+
+    assert.equal(app.element('lyrics').value, '用户先写入的新歌词');
+    assert.equal(app.ttmlRequests.length, 0, 'a stale file read must not call the conversion endpoint');
+  });
+
+  test('an HTTP 400 TTML error keeps prior text and surfaces the backend detail', async () => {
+    const app = await makeAppHarness();
+    app.setTtmlHandler(async () => fakeResponse(400, { detail: '不支持的 TTML 时间表达式' }));
+    const bytes = new TextEncoder().encode('<tt><body/></tt>');
+    app.element('lyrics_file').files = [{ name: 'bad.ttml', size: bytes.byteLength, arrayBuffer: async () => bytes.buffer }];
+    app.element('lyrics').value = '保留的旧歌词';
+
+    await app.dispatch('lyrics_file', 'change');
+
+    assert.equal(app.element('lyrics').value, '保留的旧歌词');
+    assert.equal(app.element('lyrics-status').textContent, '不支持的 TTML 时间表达式');
+    assert.equal(app.element('lyrics-file-note').textContent, '');
+  });
 });
 
 function defineContractTests(api) {
@@ -381,6 +641,21 @@ function defineContractTests(api) {
       assert.equal(info.hasJapanese, false);
       assert.equal(info.hasChinese, false);
       assert.equal(info.hasBackground, false);
+    });
+
+    test('any leading angle-bracket input is delegated instead of counted as lyric tags', () => {
+      for (const source of [TTML_XML, '<!-- timing -->\n<tt xmlns="http://www.w3.org/ns/ttml"><body/></tt>',
+        '<tt/>', '<tt', '<html>', '\uFEFF\n  <tt']) {
+        const info = analyze(source);
+        assert.equal(info.empty, false);
+        assert.equal(info.kind, 'ttml');
+        assert.equal(info.needsTtmlConversion, true);
+        assert.equal(info.count, 0);
+        assert.equal(info.anchored, false);
+        assert.equal(info.hasJapanese, false);
+        assert.match(info.error, /TTML.*转换/);
+      }
+      assert.equal(api.resolveOptions(preferences({ lyrics: analyze(TTML_XML), aligner: 'auto' })).valid, false);
     });
 
     test('plain Japanese text is text and unanchored', () => {
@@ -450,6 +725,25 @@ function defineContractTests(api) {
     test('JSON objects and invalid optional metadata are rejected before upload', () => {
       for (const raw of ['{"text":"Hello"}', '{broken', '[{"text":"Hello","role":null}]', '[{"text":"Hello","translation":false}]']) {
         assert.ok(analyze(raw).error, raw);
+      }
+    });
+
+    test('JSON singer IDs accept v3, v1000 and the nine-digit boundary', () => {
+      const raw = JSON.stringify([
+        { text: 'First', start: 0, end: 1, agent: 'v3' },
+        { text: 'Second', start: 1, end: 2, agent: 'v1000' },
+        { text: 'Third', start: 2, end: 3, agent: 'v999999999' },
+      ]);
+      const info = analyze(raw);
+      assert.equal(info.error, '');
+      assert.equal(info.anchored, true);
+      assert.equal(info.count, 3);
+    });
+
+    test('JSON singer IDs reject zero-leading, malformed and overlong values with the allowed format', () => {
+      for (const agent of ['v0', 'v01', 'v', 'V3', 'v3x', 'v1000000000', 3, null]) {
+        const info = analyze(JSON.stringify([{ text: 'Line', start: 0, end: 1, agent }]));
+        assert.match(info.error, /歌手 ID 无效.*v1.*v3.*v1000/);
       }
     });
 

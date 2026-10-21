@@ -200,7 +200,7 @@ def test_prompt_api_uses_selected_profile_and_rejects_unknown(api, monkeypatch):
     assert original.json() == export_prompt(LYRICS, 'song.wav', prompt_profile='original')
     assert set(default.json()) == {'prompt', 'request_id', 'lines'}
     assert invalid.status_code == 400
-    assert client.get('/api/status').json()['api_version'] == 6
+    assert client.get('/api/status').json()['api_version'] == 7
 
 
 def test_jobs_forwards_profile_positionally_only_for_direct(api, monkeypatch):

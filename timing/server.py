@@ -259,6 +259,15 @@ async def llm_prompt(lyrics: str = Form(''), audio_name: str = Form(''), llm_pro
         raise HTTPException(400,str(exc)) from None
 
 
+@app.post('/api/lyrics/ttml')
+async def import_ttml(lyrics: str = Form('')):
+    from .ttml_input import normalize_ttml
+    try:
+        return await run_in_threadpool(normalize_ttml, lyrics)
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(400, str(exc)) from None
+
+
 @app.post('/api/llm/import/validate')
 async def validate_llm_import(lyrics: str = Form(''), llm_result_file: UploadFile | None = File(None)):
     result = await read_llm_result(llm_result_file)
