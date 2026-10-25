@@ -2,6 +2,7 @@
 import gc
 import json
 import subprocess
+from contextlib import contextmanager
 from pathlib import Path
 
 import soundfile as sf
@@ -15,6 +16,36 @@ def separator_ready():
     checkpoint = folder / "MelBandRoformer.ckpt"
     return (SEPARATOR_DIR / "assets.json").is_file() and checkpoint.is_file() and \
         checkpoint.stat().st_size == 913106900 and (folder / "config_vocals_mel_band_roformer.yaml").is_file()
+
+
+@contextmanager
+def _on_mps(device):
+    """Run melband-roformer-infer on MPS, which it does not support itself.
+
+    It refuses "mps" when it resolves the device, and MelBand averages its
+    complex masks with scatter_add_, which MPS lacks for complex tensors. The
+    sum is linear, so the real and imaginary parts are scattered separately.
+    """
+    if device != "mps":
+        yield
+        return
+    import torch
+    from mel_band_roformer import inference
+    resolve, scatter_add_ = inference._resolve_device, torch.Tensor.scatter_add_
+
+    def complex_scatter_add_(self, dim, index, src, **kwargs):
+        if self.is_complex() and self.device.type == "mps":
+            real = self.real.scatter_add(dim, index, src.real)
+            imag = self.imag.scatter_add(dim, index, src.imag)
+            return self.copy_(torch.complex(real, imag))
+        return scatter_add_(self, dim, index, src, **kwargs)
+
+    inference._resolve_device = lambda requested: torch.device("mps") if str(requested) == "mps" else resolve(requested)
+    torch.Tensor.scatter_add_ = complex_scatter_add_
+    try:
+        yield
+    finally:
+        inference._resolve_device, torch.Tensor.scatter_add_ = resolve, scatter_add_
 
 
 def separate_vocals(source: Path, output_dir: Path, log=print):
@@ -42,9 +73,10 @@ def separate_vocals(source: Path, output_dir: Path, log=print):
     session = MelBandRoformerSession(model_name=SEPARATOR_NAME, model_path=checkpoint,
                                      config_path=config, device=device, progress=False)
     try:
-        session.load()
-        log("正在 GPU 分离人声与伴奏…")
-        manifest = session.infer(inputs, store_dir=outputs, output_format="wav_float32")
+        with _on_mps(device):
+            session.load()
+            log("正在 GPU 分离人声与伴奏…")
+            manifest = session.infer(inputs, store_dir=outputs, output_format="wav_float32")
         vocal_outputs = [Path(entry["output_path"]) for entry in manifest if entry["output_id"] == "vocals"]
         if len(vocal_outputs) != 1:
             raise RuntimeError("分离器未返回唯一的人声轨。")
