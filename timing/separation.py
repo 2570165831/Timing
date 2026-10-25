@@ -7,6 +7,7 @@ from pathlib import Path
 import soundfile as sf
 
 from .config import SEPARATOR_DIR, SEPARATOR_NAME
+from .device import require_gpu, empty_cache
 
 
 def separator_ready():
@@ -20,8 +21,7 @@ def separate_vocals(source: Path, output_dir: Path, log=print):
     import torch
     from mel_band_roformer import MelBandRoformerSession, ensure_model_assets
 
-    if not torch.cuda.is_available():
-        raise RuntimeError("自动人声分离需要 CUDA GPU，请先运行 setup.ps1。")
+    device = require_gpu("自动人声分离")
     if not separator_ready():
         raise RuntimeError("人声分离模型尚未下载完整，请运行 scripts/download_separator.py。")
     # download_missing=False is deliberate: user audio never triggers downloads.
@@ -40,7 +40,7 @@ def separate_vocals(source: Path, output_dir: Path, log=print):
     input_info = sf.info(mix)
     log("加载 MelBand RoFormer Kim 人声模型…")
     session = MelBandRoformerSession(model_name=SEPARATOR_NAME, model_path=checkpoint,
-                                     config_path=config, device="cuda:0", progress=False)
+                                     config_path=config, device=device, progress=False)
     try:
         session.load()
         log("正在 GPU 分离人声与伴奏…")
@@ -60,9 +60,9 @@ def separate_vocals(source: Path, output_dir: Path, log=print):
         (output_dir / "separation.json").write_text(json.dumps(info, indent=2), encoding="utf-8")
         log("人声分离完成，释放分离模型显存，开始打轴。")
         return result, info
-    except torch.cuda.OutOfMemoryError as exc:
+    except torch.OutOfMemoryError as exc:
         raise RuntimeError("人声分离显存不足，请关闭占用显存的程序，或选择“直接使用音轨”后重试。") from exc
     finally:
         session.close()
         gc.collect()
-        torch.cuda.empty_cache()
+        empty_cache()
